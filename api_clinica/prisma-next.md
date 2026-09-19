@@ -75,9 +75,11 @@ You can customize how your environment variables are loaded by changing or remov
 
 ### Commands
 
+
 ```bash
 npx prisma contract emit       # Update contract.json and contract.d.ts
 npx prisma db init             # Create tables in the database
+
 npx prisma migration status    # Show migration status
 ```
 
