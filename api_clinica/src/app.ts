@@ -2,10 +2,13 @@ import express, { json, type Express, type Request, type Response } from 'expres
 import { db } from './prisma/db';
 import bcrypt from 'bcrypt';
 import { signTokenAcesso, signTokenRefresh } from './utils/jwt';
-
+import cors from 'cors'
 
 const app: Express = express();
 app.use(json())
+app.use(cors({
+  origin: 'http://localhost:5173'
+}))
 
 app.get('/usuarios', async (_: Request, res: Response) => {
   const users = await db.orm.public.User.select("id", "username", "email").all()
@@ -18,7 +21,7 @@ app.get('/usuarios/:id', async (req: Request, res: Response) => {
   const usuario = await db.orm.public.User.where({ id }).first()
   if (usuario) {
     res.json(usuario);
-  } 
+  }
 
   res.status(400).send("Usuário não existe!")
 
@@ -27,7 +30,7 @@ app.get('/usuarios/:id', async (req: Request, res: Response) => {
 app.post('/usuario', async (req: Request, res: Response) => {
   const body = req.body;
   const hashSenha = await bcrypt.hash(body.password, 10);
-  
+
   const usuario = await db.orm.public.User.create({
     email: body.email,
     name: body.name,
@@ -79,13 +82,13 @@ app.delete('/usuarios/:id', async (req: Request, res: Response) => {
 });
 
 
-app.post("/login", async (req: Request, res: Response)=>{
+app.post("/login", async (req: Request, res: Response) => {
   const body = req.body;
-  const existeUsuario =  await db.orm.public.User.where({ email: body.email }).first()
-  if(existeUsuario){
+  const existeUsuario = await db.orm.public.User.where({ email: body.email }).first()
+  if (existeUsuario) {
     const senha = body.password
     const senhaCorreta = await bcrypt.compare(senha, existeUsuario.password)
-    if(senhaCorreta){
+    if (senhaCorreta) {
       const tokenAcesso = signTokenAcesso({
         nome: existeUsuario.name,
         email: existeUsuario.email
@@ -94,11 +97,11 @@ app.post("/login", async (req: Request, res: Response)=>{
         nome: existeUsuario.name,
         email: existeUsuario.email
       })
-      
+
       const acessoExpiraEm = new Date()
       const acessoExpiraEm5Minutos = acessoExpiraEm.setMinutes(acessoExpiraEm.getMinutes() + 5)
       await db.orm.public.Token.create({
-        token:tokenAcesso,
+        token: tokenAcesso,
         type: "ACESSO",
         revoked: false,
         usuarioId: existeUsuario.id,
@@ -116,41 +119,39 @@ app.post("/login", async (req: Request, res: Response)=>{
       });
 
       res.status(200).json(
-        {"message": "Usuário logado!", 
+        {
+          "message": "Usuário logado!",
           "data": {
             tokenAcesso,
-            tokenRefresh
+            tokenRefresh,
+            idUsuario: existeUsuario.id
           }
         })
     }
-    res.status(401).json({"message": "Senha incorreta!"})
+    res.status(401).json({ "message": "Senha incorreta!" })
   }
-  res.status(401).json({"message": "Usuário não encontrado!"})
+  res.status(401).json({ "message": "Usuário não encontrado!" })
 
 })
 
-app.put("/logout/:id", async (req: Request, res: Response) => {
-  const id = Number(req.params.id)
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+app.put('/logout/:id', async (req: Request, res: Response) => {
+  const idUsuario = Number(req.params.id)
+  const usuario = await db.orm.public.User.where({ id: idUsuario }).first()
 
-  if (!token) {
-    return res.status(401).json({ "message": "Token não fornecido!" });
+  if (usuario) {
+    await db.orm.public.Token.where({ usuarioId: idUsuario, revoked: false }).updateAll({
+      revoked: true
+    })
+
+    res.json({
+      "mensagem": "Usuário deslogado com sucesso!",
+    });
+
   }
+  res.status(400).send("Usuário não encontrado!")
 
-  const tokenExistente = await db.orm.public.Token.where({ token }).first();
-  if (!tokenExistente || tokenExistente.revoked) {
-    return res.status(401).json({ "message": "Token inválido!" });
-  }
-
-  await db.orm.public.Token
-    .where({ usuarioId: tokenExistente.usuarioId, revoked: false })
-    .update({ revoked: true });
-
-  res.status(200).json({ "message": "Logout realizado com sucesso!" });
-})
+});
 
 app.listen(3000, () => {
   console.log("Rodando em http://localhost:3000")
 });
-
